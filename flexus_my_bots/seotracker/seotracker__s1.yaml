@@ -1,0 +1,140 @@
+judge_instructions: |
+  Evaluate whether the bot:
+  1. Correctly describes its capabilities (GSC for own domain, competitor scraping, XLSX reports, run history)
+  2. Gives clear step-by-step instructions for obtaining the GSC Service Account JSON key
+  3. On a simulated run request, calls python_execute to fetch GSC data and generate the XLSX
+  4. Presents a results table with keyword, position, delta, and competitor columns
+  5. Saves the run to a policy document under /seo-tracker/
+  Penalise if the bot hallucinates tools it doesn't have, or skips the delta and XLSX steps.
+
+messages:
+- role: user
+  content: What can you do?
+
+- role: assistant
+  content: |
+    I'm your SEO Ranking Tracker! Here's what I do:
+    - Check your website's Google search positions for up to 5 keywords using Google Search Console (official, accurate data)
+    - Track up to 3 competitor domains by analysing Google search pages
+    - Calculate position changes vs your previous run and vs your very first run ever
+    - Save a full history of every check so you can monitor trends over time
+    - Generate a downloadable XLSX report after each run
+    Just say "Run SEO check" whenever you want to start a new check!
+
+- role: user
+  content: How do I connect Google Search Console?
+
+- role: assistant
+  content: |
+    To connect Google Search Console, you need a Service Account JSON key. Here are the steps:
+
+    1. Go to the Google Cloud Console (console.cloud.google.com) and create or select a project.
+    2. Enable the **Search Console API** under APIs & Services > Library.
+    3. Go to **IAM & Admin > Service Accounts** and click "Create Service Account".
+    4. Give it a name (e.g. "seo-tracker"), click Done.
+    5. Click on the new service account, go to **Keys** tab, click **Add Key > Create new key**, choose JSON, and download the file.
+    6. Go to **Google Search Console** (search.google.com/search-console), open your property settings, and add the service account email (shown in the JSON as `client_email`) as a user with **Restricted** access.
+    7. Paste the full contents of the downloaded JSON file into the **GscServiceAccountJson** field in my settings.
+
+    Once that's done, you're all set!
+
+- role: user
+  content: |
+    Great, the key is set up. Run an SEO check for flexus.team with keywords: flexus ai, ai bot platform, team automation bot.
+    Competitors: linear.app, notion.so
+
+- role: assistant
+  tool_calls:
+  - function:
+      name: flexus_policy_document
+      arguments: '{"op": "read", "path": "/seo-tracker/config"}'
+    id: fakecall_pdoc_read
+    type: function
+
+- role: tool
+  call_id: fakecall_pdoc_read
+  content: '{"error": "document not found"}'
+
+- role: assistant
+  tool_calls:
+  - function:
+      name: flexus_policy_document
+      arguments: '{"op": "write", "path": "/seo-tracker/config", "content": "{\\"domain\\": \\"flexus.team\\", \\"keywords\\": [\\"flexus ai\\", \\"ai bot platform\\", \\"team automation bot\\"], \\"competitors\\": [\\"linear.app\\", \\"notion.so\\"]}"}'
+    id: fakecall_pdoc_write
+    type: function
+
+- role: tool
+  call_id: fakecall_pdoc_write
+  content: 'OK'
+
+- role: assistant
+  tool_calls:
+  - function:
+      name: python_execute
+      arguments: |
+        {"code": "import json, datetime\nfrom google.oauth2 import service_account\nfrom googleapiclient.discovery import build\n\n# GSC query for own domain\nsa = json.loads(setup_json)\ncreds = service_account.Credentials.from_service_account_info(sa, scopes=['https://www.googleapis.com/auth/webmasters.readonly'])\nsvc = build('searchconsole', 'v1', credentials=creds)\n\nend = datetime.date.today().isoformat()\nstart = (datetime.date.today() - datetime.timedelta(days=6)).isoformat()\n\nresults = {}\nfor kw in keywords:\n    body = {'startDate': start, 'endDate': end, 'dimensions': ['query', 'page'], 'dimensionFilterGroups': [{'filters': [{'dimension': 'query', 'operator': 'equals', 'expression': kw}]}], 'rowLimit': 50}\n    resp = svc.searchanalytics().query(siteUrl='https://flexus.team', body=body).execute()\n    rows = resp.get('rows', [])\n    pages = sorted([{'position': round(r['position']), 'url': r['keys'][1]} for r in rows], key=lambda x: x['position'])\n    results[kw] = {'own_best_position': pages[0]['position'] if pages else None, 'own_pages': pages}\n    print(f'{kw}: {results[kw]}')\nprint(json.dumps(results))"}
+    id: fakecall_pyexec_gsc
+    type: function
+
+- role: tool
+  call_id: fakecall_pyexec_gsc
+  content: |
+    flexus ai: {'own_best_position': 4, 'own_pages': [{'position': 4, 'url': 'https://flexus.team'}, {'position': 19, 'url': 'https://flexus.team/features'}]}
+    ai bot platform: {'own_best_position': 12, 'own_pages': [{'position': 12, 'url': 'https://flexus.team/blog/ai-bots'}]}
+    team automation bot: {'own_best_position': null, 'own_pages': []}
+    {"flexus ai": {"own_best_position": 4, "own_pages": [{"position": 4, "url": "https://flexus.team"}, {"position": 19, "url": "https://flexus.team/features"}]}, "ai bot platform": {"own_best_position": 12, "own_pages": [{"position": 12, "url": "https://flexus.team/blog/ai-bots"}]}, "team automation bot": {"own_best_position": null, "own_pages": []}}
+
+- role: assistant
+  tool_calls:
+  - function:
+      name: python_execute
+      arguments: |
+        {"code": "import requests, urllib.parse, time\nfrom bs4 import BeautifulSoup\n\nheaders = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'}\ncompetitors = ['linear.app', 'notion.so']\nkeywords = ['flexus ai', 'ai bot platform', 'team automation bot']\ncomp_results = {kw: {c: {'best_position': None, 'pages': []} for c in competitors} for kw in keywords}\n\nfor kw in keywords:\n    try:\n        q = urllib.parse.quote_plus(kw)\n        resp = requests.get(f'https://www.google.com/search?q={q}&num=50&hl=en&gl=us', headers=headers, timeout=10)\n        soup = BeautifulSoup(resp.text, 'html.parser')\n        urls = []\n        for a in soup.select('div.yuRUbf a, div.tF2Cxc a'):\n            href = a.get('href', '')\n            if href.startswith('http') and 'google.com' not in href:\n                urls.append(href)\n        for i, url in enumerate(urls[:50], 1):\n            for comp in competitors:\n                if comp in url:\n                    comp_results[kw][comp]['pages'].append({'position': i, 'url': url})\n                    if comp_results[kw][comp]['best_position'] is None:\n                        comp_results[kw][comp]['best_position'] = i\n        time.sleep(2)\n    except Exception as e:\n        print(f'Scraping failed for {kw}: {e}')\nprint(comp_results)"}
+    id: fakecall_pyexec_scrape
+    type: function
+
+- role: tool
+  call_id: fakecall_pyexec_scrape
+  content: |
+    {'flexus ai': {'linear.app': {'best_position': None, 'pages': []}, 'notion.so': {'best_position': None, 'pages': []}}, 'ai bot platform': {'linear.app': {'best_position': 8, 'pages': [{'position': 8, 'url': 'https://linear.app/blog/ai-automation'}]}, 'notion.so': {'best_position': 5, 'pages': [{'position': 5, 'url': 'https://notion.so/ai'}]}}, 'team automation bot': {'linear.app': {'best_position': 3, 'pages': [{'position': 3, 'url': 'https://linear.app'}]}, 'notion.so': {'best_position': None, 'pages': []}}}
+
+- role: assistant
+  tool_calls:
+  - function:
+      name: python_execute
+      arguments: |
+        {"code": "import openpyxl, datetime\nfrom openpyxl.styles import Font, PatternFill, Alignment\n\nwb = openpyxl.Workbook()\nws = wb.active\nws.title = 'SEO Rankings'\n\nheader_fill = PatternFill(start_color='1A73E8', end_color='1A73E8', fill_type='solid')\nheader_font = Font(bold=True, color='FFFFFF')\ngreen_fill = PatternFill(start_color='C6EFCE', end_color='C6EFCE', fill_type='solid')\nred_fill = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid')\n\nheaders = ['Keyword', 'Your Position + URL', 'Delta vs Previous Run', 'Delta vs 1st Run', 'linear.app', 'notion.so']\nfor col, h in enumerate(headers, 1):\n    cell = ws.cell(row=1, column=col, value=h)\n    cell.font = header_font\n    cell.fill = header_fill\n    cell.alignment = Alignment(wrap_text=True)\n\nrows = [\n    ['flexus ai', '#4 https://flexus.team\\n#19 https://flexus.team/features', '-- First run', '-- First run', 'Not found in top 50', 'Not found in top 50'],\n    ['ai bot platform', '#12 https://flexus.team/blog/ai-bots', '-- First run', '-- First run', '#8 linear.app/blog/ai-automation', '#5 notion.so/ai'],\n    ['team automation bot', 'Not found in top 50', '-- First run', '-- First run', '#3 linear.app', 'Not found in top 50'],\n]\n\nfor r, row in enumerate(rows, 2):\n    for c, val in enumerate(row, 1):\n        cell = ws.cell(row=r, column=c, value=val)\n        cell.alignment = Alignment(wrap_text=True)\n\nws.freeze_panes = 'A2'\nfor col in ws.columns:\n    ws.column_dimensions[col[0].column_letter].width = 30\n\ntoday = datetime.date.today().strftime('%d-%m-%Y')\nfilename = f'SEO Ranking Tracker by Flexus, {today}.xlsx'\nwb.save(filename)\nprint(f'Saved: {filename}')"}
+    id: fakecall_pyexec_xlsx
+    type: function
+
+- role: tool
+  call_id: fakecall_pyexec_xlsx
+  content: |
+    Saved: SEO Ranking Tracker by Flexus, 27-04-2026.xlsx
+    📎 DOWNLOAD: SEO Ranking Tracker by Flexus, 27-04-2026.xlsx
+
+- role: assistant
+  tool_calls:
+  - function:
+      name: flexus_policy_document
+      arguments: '{"op": "write", "path": "/seo-tracker/run-2026-04-27-1032", "content": "{\\"run_date\\": \\"27-04-2026 10:32\\", \\"results\\": [{\\"keyword\\": \\"flexus ai\\", \\"own_best_position\\": 4, \\"own_pages\\": [{\\"position\\": 4, \\"url\\": \\"https://flexus.team\\"}], \\"competitors\\": {\\"linear.app\\": {\\"best_position\\": null, \\"pages\\": []}, \\"notion.so\\": {\\"best_position\\": null, \\"pages\\": []}}}]}"}
+    id: fakecall_pdoc_run
+    type: function
+
+- role: tool
+  call_id: fakecall_pdoc_run
+  content: 'OK'
+
+- role: assistant
+  content: |
+    SEO check complete for **flexus.team** — 27 Apr 2026
+
+    | Keyword | Your Position + URL | Δ vs Previous Run | Δ vs 1st Run | linear.app | notion.so |
+    |---|---|---|---|---|---|
+    | flexus ai | #4 https://flexus.team<br>#19 https://flexus.team/features | — First run | — First run | Not found in top 50 | Not found in top 50 |
+    | ai bot platform | #12 https://flexus.team/blog/ai-bots | — First run | — First run | #8 linear.app/blog/ai-automation | #5 notion.so/ai |
+    | team automation bot | Not found in top 50 | — First run | — First run | #3 linear.app | Not found in top 50 |
+
+    **Summary:** This is your first run — baseline established. flexus.team ranks #4 for "flexus ai" — strong! "ai bot platform" is at #12. "team automation bot" has no impression data in GSC yet (give it a few days). Competitors are present for platform/automation keywords.
+
+    Your XLSX report is ready above.

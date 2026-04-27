@@ -1,0 +1,14 @@
+[project]
+name = "seo-ranking-bot"
+version = "1.0.0"
+requires-python = ">=3.10"
+dependencies = [
+    "flexus-client-kit",
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
