@@ -39,8 +39,8 @@ async def install(client: ckit_client.FlexusClient):
         marketable_typical_group="Marketing",
         marketable_setup_default=seotracker_bot.SEOTRACKER_SETUP_SCHEMA,
         marketable_featured_actions=[
-            {"feat_question": "Run SEO check", "feat_expert": "default", "feat_depends_on_setup": ["GscServiceAccountJson"]},
-            {"feat_question": "Show my ranking history", "feat_expert": "default", "feat_depends_on_setup": ["GscServiceAccountJson"]},
+            {"feat_question": "Run SEO check", "feat_expert": "default", "feat_depends_on_setup": ["SerpApiKey"]},
+            {"feat_question": "Show my ranking history", "feat_expert": "default", "feat_depends_on_setup": ["SerpApiKey"]},
         ],
         marketable_intro_message=(
             "Hi! I'm your SEO Ranking Tracker. I can check your Google search positions "

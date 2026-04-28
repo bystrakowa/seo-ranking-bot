@@ -1,10 +1,10 @@
 [
   {
-    "bs_name": "GscServiceAccountJson",
+    "bs_name": "SerpApiKey",
     "bs_type": "string_long",
     "bs_default": "",
-    "bs_group": "Google Search Console",
+    "bs_group": "SerpAPI",
     "bs_importance": 2,
-    "bs_description": "Google Search Console Service Account JSON key. Download from Google Cloud Console > IAM & Admin > Service Accounts. The service account must be added to your Search Console property with Restricted access."
+    "bs_description": "Your SerpAPI key from serpapi.com. Used to fetch Google search results for your domain and competitors. Free tier includes 100 searches/month."
   }
 ]
